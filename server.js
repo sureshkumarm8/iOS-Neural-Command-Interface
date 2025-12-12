@@ -3,7 +3,7 @@ import { exec, spawn } from 'child_process';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { readFileSync } from 'fs';
+import { readFileSync, chmodSync, existsSync } from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,23 +14,40 @@ const port = 3001;
 app.use(cors());
 app.use(express.json());
 
+// Ensure scripts are executable on startup
+const scripts = ['connect_ios_wireless.sh', 'send_command_fast.sh', 'send_to_ios_wireless.sh'];
+console.log('[Server] Verifying script permissions...');
+scripts.forEach(script => {
+    const scriptPath = path.join(__dirname, script);
+    if (existsSync(scriptPath)) {
+        try {
+            chmodSync(scriptPath, '755');
+            console.log(`[Server] ✅ Set +x permission for ${script}`);
+        } catch (err) {
+            console.error(`[Server] ⚠️ Failed to set permissions for ${script}: ${err.message}`);
+        }
+    }
+});
+
 // Helper function to get device IP from config
 function getDeviceHost(deviceName) {
     try {
         const configPath = path.join(__dirname, 'devices.conf');
-        const configContent = readFileSync(configPath, 'utf8');
-        const lines = configContent.split('\n');
-        
-        for (const line of lines) {
-            if (line.startsWith(deviceName + ',')) {
-                const parts = line.split(',');
-                const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
-                if (ipRegex.test(parts[1])) {
-                    return parts[1];
-                } else if (parts[2] && ipRegex.test(parts[2])) {
-                    return parts[2];
+        if (existsSync(configPath)) {
+            const configContent = readFileSync(configPath, 'utf8');
+            const lines = configContent.split('\n');
+            
+            for (const line of lines) {
+                if (line.startsWith(deviceName + ',')) {
+                    const parts = line.split(',');
+                    const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
+                    if (ipRegex.test(parts[1])) {
+                        return parts[1];
+                    } else if (parts[2] && ipRegex.test(parts[2])) {
+                        return parts[2];
+                    }
+                    break;
                 }
-                break;
             }
         }
     } catch (e) {
@@ -86,11 +103,12 @@ app.post('/connect', (req, res) => {
         if (responseReturned) return;
 
         const scriptPath = path.join(__dirname, 'connect_ios_wireless.sh');
-        const command = `${scriptPath} -d ${deviceName} ""`;
+        
+        // Pass script path as argument to bash to avoid permission denied errors
+        // Command becomes: bash /path/to/script.sh -d deviceName ""
+        console.log(`[Server] Starting full connection: bash ${scriptPath} -d ${deviceName}`);
 
-        console.log(`[Server] Starting full connection: ${command}`);
-
-        const child = spawn('bash', ['-c', command], {
+        const child = spawn('bash', [scriptPath, '-d', deviceName, ''], {
             stdio: ['pipe', 'pipe', 'pipe'],
             timeout: 30000
         });
@@ -179,11 +197,12 @@ app.post('/command', (req, res) => {
 
     // Use the fast command script for better performance
     const scriptPath = path.join(__dirname, 'send_command_fast.sh');
-    const fullCommand = `${scriptPath} ${deviceName} ${command}`;
+    
+    // Pass script path as argument to bash to avoid permission denied errors
+    // Command becomes: bash /path/to/script.sh deviceName command
+    console.log(`[Server] Executing fast command: bash ${scriptPath} ${deviceName} ${command}`);
 
-    console.log(`[Server] Executing fast command: ${fullCommand}`);
-
-    const child = spawn('bash', ['-c', fullCommand], {
+    const child = spawn('bash', [scriptPath, deviceName, command], {
         stdio: ['pipe', 'pipe', 'pipe'],
         timeout: 10000
     });
