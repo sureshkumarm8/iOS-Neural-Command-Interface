@@ -1,14 +1,13 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Device, DeviceStatus } from '../types';
-import { WifiOff, Lock, Home, Loader2, Wifi } from 'lucide-react';
+import { WifiOff, Loader2 } from 'lucide-react';
 
 interface TheStageProps {
   device: Device | undefined;
-  overlayText: string | null; // For subtitles
   lastAction: string | null;
 }
 
-const TheStage: React.FC<TheStageProps> = ({ device, overlayText, lastAction }) => {
+const TheStage: React.FC<TheStageProps> = ({ device, lastAction }) => {
   const [frameIndex, setFrameIndex] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
@@ -149,15 +148,6 @@ const TheStage: React.FC<TheStageProps> = ({ device, overlayText, lastAction }) 
                 height={device.type === 'iPad' ? 450 : 650} 
                 className="w-full h-full object-cover opacity-90"
               />
-              
-              {/* Subtitle Overlay */}
-              {overlayText && (
-                <div className="absolute bottom-12 left-4 right-4 text-center pointer-events-none">
-                  <span className="inline-block bg-black/60 backdrop-blur-md text-white px-4 py-2 rounded-xl text-lg font-medium shadow-lg animate-float">
-                    "{overlayText}"
-                  </span>
-                </div>
-              )}
             </>
           )}
 
