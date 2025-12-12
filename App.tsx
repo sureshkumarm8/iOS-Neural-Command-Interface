@@ -5,7 +5,7 @@ import TacticalDeck from './components/TacticalDeck';
 import Terminal from './components/Terminal';
 import NeuralCore from './components/NeuralCore';
 import { MOCK_DEVICES } from './constants';
-import { Device, AppPreset, CommandAction, DeviceStatus, TerminalLog, AIState } from './types';
+import { Device, AppPreset, CommandAction, DeviceStatus, TerminalLog, AIState, ChatMessage } from './types';
 import { sendCommandToDevice, connectToDevice, disconnectFromDevice } from './services/deviceBridge';
 import { interpretCommand } from './services/geminiService';
 
@@ -18,6 +18,9 @@ const App: React.FC = () => {
   // AI State
   const [aiState, setAiState] = useState<AIState>(AIState.IDLE);
   const [narration, setNarration] = useState<string | null>(null);
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([
+     { id: 'init', sender: 'ai', text: 'Neural Uplink established. Ready for commands.', timestamp: new Date() }
+  ]);
 
   const selectedDevice = devices.find(d => d.id === selectedDeviceId);
 
@@ -55,6 +58,48 @@ const App: React.FC = () => {
     }, 2000);
   }, [selectedDevice, addLog]);
 
+  // Handle Response from AI (Common for Voice and Text)
+  const processAIResponse = async (command: CommandAction) => {
+      // Add AI Response to Chat
+      if (command.narration) {
+          setChatHistory(prev => [...prev, {
+              id: Date.now().toString() + 'ai',
+              sender: 'ai',
+              text: command.narration || 'Command executed.',
+              timestamp: new Date()
+          }]);
+          setNarration(command.narration);
+      }
+
+      // Speak audio (Browser TTS)
+      if (command.narration) {
+            setAiState(AIState.SPEAKING);
+            const utterance = new SpeechSynthesisUtterance(command.narration);
+            const voices = window.speechSynthesis.getVoices();
+            const preferredVoice = voices.find(v => v.name.includes('Google US English') || v.name.includes('Samantha'));
+            if (preferredVoice) utterance.voice = preferredVoice;
+            utterance.rate = 1.1; 
+
+            utterance.onend = () => {
+                 setAiState(AIState.IDLE);
+                 setNarration(null);
+            };
+            setTimeout(() => {
+                if (window.speechSynthesis.speaking) {
+                    setAiState(AIState.IDLE);
+                    setNarration(null);
+                }
+            }, 6000);
+            window.speechSynthesis.speak(utterance);
+      } else {
+          setAiState(AIState.IDLE);
+      }
+
+      if (command.action !== 'UNKNOWN') {
+          await executeAction(command.action, command.payload);
+      }
+  };
+
   // Handle Voice Input
   const handleVoiceInput = async (audioData: string, mimeType: string) => {
     if (!selectedDevice) {
@@ -66,50 +111,21 @@ const App: React.FC = () => {
         }, 3000);
         return;
     }
+
+    // Add visual placeholder for voice
+    setChatHistory(prev => [...prev, {
+        id: Date.now().toString() + 'voice',
+        sender: 'user',
+        text: '🎤 [Voice Transmission]',
+        timestamp: new Date()
+    }]);
     
     setAiState(AIState.PROCESSING);
     addLog("Processing voice command...", 'info');
 
     try {
-        // Use Gemini Flash Lite for fast response
         const command = await interpretCommand({ audioData, mimeType });
-        
-        if (command.narration) {
-            setNarration(command.narration);
-            setAiState(AIState.SPEAKING);
-            addLog(`AI: ${command.narration}`, 'success');
-            
-            // Speak audio (Browser TTS)
-            const utterance = new SpeechSynthesisUtterance(command.narration);
-            // Optional: Choose a more robotic voice if available
-            const voices = window.speechSynthesis.getVoices();
-            const preferredVoice = voices.find(v => v.name.includes('Google US English') || v.name.includes('Samantha'));
-            if (preferredVoice) utterance.voice = preferredVoice;
-            
-            utterance.rate = 1.1; // Slightly faster for "tactical" feel
-
-            utterance.onend = () => {
-                 setAiState(AIState.IDLE);
-                 setNarration(null);
-            };
-            // Safety timeout in case onend doesn't fire
-            setTimeout(() => {
-                if (window.speechSynthesis.speaking) {
-                    // Don't cancel, just reset UI
-                    setAiState(AIState.IDLE);
-                    setNarration(null);
-                }
-            }, 6000);
-            
-            window.speechSynthesis.speak(utterance);
-        } else {
-             setAiState(AIState.IDLE);
-        }
-
-        if (command.action !== 'UNKNOWN') {
-            await executeAction(command.action, command.payload);
-        }
-
+        await processAIResponse(command);
     } catch (error) {
         console.error("AI Error:", error);
         addLog("Neural Core processing failed.", 'error');
@@ -118,21 +134,46 @@ const App: React.FC = () => {
     }
   };
 
-  // Allow text injection to also be smart if we wanted, 
-  // currently TacticalDeck sends 'TYPE' directly.
-  // We can add a "Smart Text" feature later.
+  // Handle Text Input from TacticalDeck Chat
+  const handleChatInput = async (text: string) => {
+    if (!selectedDevice) {
+        addLog("Cannot send command: No device selected.", 'error');
+        return;
+    }
+
+    // Add User Message to Chat
+    setChatHistory(prev => [...prev, {
+        id: Date.now().toString(),
+        sender: 'user',
+        text: text,
+        timestamp: new Date()
+    }]);
+
+    setAiState(AIState.PROCESSING);
+    addLog("Processing text command...", 'info');
+
+    try {
+        const command = await interpretCommand({ text });
+        await processAIResponse(command);
+    } catch (error) {
+        console.error("AI Error:", error);
+        addLog("Neural Core processing failed.", 'error');
+        setAiState(AIState.IDLE);
+        setChatHistory(prev => [...prev, {
+            id: Date.now().toString() + 'err',
+            sender: 'ai',
+            text: 'Error processing command.',
+            timestamp: new Date()
+        }]);
+    }
+  };
 
   // Connection Handler
   const handleConnectDevice = async (device: Device) => {
-    // 1. Update UI to BUSY
     setDevices(prev => prev.map(d => d.id === device.id ? { ...d, status: DeviceStatus.BUSY } : d));
     addLog(`Initializing uplink to ${device.name}...`, 'info');
-    
     try {
-      // 2. Run Connect Script
       await connectToDevice(device, addLog);
-
-      // 3. Update UI to ONLINE only after success
       setDevices(prev => prev.map(d => d.id === device.id ? { ...d, status: DeviceStatus.ONLINE } : d));
       addLog(`Connection established: ${device.name}`, 'success');
     } catch (e) {
@@ -153,21 +194,10 @@ const App: React.FC = () => {
     }
   };
 
-  // Direct actions
-  const handleLaunchApp = (app: AppPreset) => {
-    executeAction('LAUNCH_APP', app.name);
-    addLog(`Launching ${app.name}`, 'command');
-  };
-
   const handleSystemAction = (action: string) => {
     const mappedAction = action as CommandAction['action']; 
     executeAction(mappedAction);
     addLog(`Executing ${action}`, 'command');
-  };
-
-  const handleType = (text: string) => {
-    executeAction('TYPE', text);
-    addLog(`Injecting text sequence`, 'command');
   };
 
   return (
@@ -201,9 +231,9 @@ const App: React.FC = () => {
       {/* Right Panel - Tactical Deck */}
       <div className="h-full z-20 border-l border-white/10">
         <TacticalDeck 
-          onLaunchApp={handleLaunchApp}
+          chatHistory={chatHistory}
+          onChatInput={handleChatInput}
           onSystemAction={handleSystemAction}
-          onType={handleType}
           disabled={!selectedDevice || selectedDevice.status !== DeviceStatus.ONLINE}
         />
       </div>

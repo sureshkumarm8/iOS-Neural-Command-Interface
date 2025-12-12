@@ -41,3 +41,10 @@ export interface TerminalLog {
   text: string;
   type: 'info' | 'command' | 'success' | 'error';
 }
+
+export interface ChatMessage {
+  id: string;
+  sender: 'user' | 'ai';
+  text: string;
+  timestamp: Date;
+}
