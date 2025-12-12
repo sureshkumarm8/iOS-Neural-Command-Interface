@@ -9,6 +9,15 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    server: {
+      proxy: {
+        '/api': {
+          target: 'http://localhost:3001',
+          changeOrigin: true,
+          secure: false,
+        }
+      }
+    },
     define: {
       // This is necessary because the existing code uses process.env.API_KEY
       // which is a Node.js pattern. We map it here so the browser can read it.
