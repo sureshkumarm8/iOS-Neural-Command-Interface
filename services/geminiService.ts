@@ -2,8 +2,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { CommandAction } from '../types';
 
 // Initialize Gemini Client
-const apiKey = process.env.API_KEY || ''; 
-const ai = new GoogleGenAI({ apiKey });
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 const MODEL_NAME = 'gemini-2.5-flash';
 
@@ -29,7 +28,7 @@ Return ONLY the JSON object conforming to the schema.
 `;
 
 export const interpretCommand = async (text: string): Promise<CommandAction> => {
-  if (!apiKey) {
+  if (!process.env.API_KEY) {
     console.warn("No API Key found");
     return { action: 'UNKNOWN', narration: "System Offline. API Key missing." };
   }
