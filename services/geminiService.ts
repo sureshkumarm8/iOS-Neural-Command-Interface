@@ -34,6 +34,7 @@ Response Rules:
 2. If the user wants to type something, use the TYPE action.
 3. Be concise.
 4. If the audio implies opening an app but you aren't sure which, guess the most likely one from the list: [Settings, Safari, Photos, Instagram, TikTok, Spotify, Youtube, Maps, Notes].
+5. ALWAYS return valid JSON. If the audio is unclear, return action="UNKNOWN" and narration="Audio signal unclear."
 `;
 
 const RESPONSE_SCHEMA = {
@@ -66,15 +67,44 @@ const RESPONSE_SCHEMA = {
   required: ["action", "narration"]
 };
 
+// Helper to clean JSON if model returns markdown
+function cleanAndParseJSON(text: string): CommandAction {
+    try {
+        return JSON.parse(text);
+    } catch (e) {
+        console.warn("JSON Parse failed, attempting cleanup...");
+        // Strip markdown code blocks
+        const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/) || text.match(/```([\s\S]*?)```/);
+        if (jsonMatch && jsonMatch[1]) {
+            return JSON.parse(jsonMatch[1]);
+        }
+        
+        // Attempt to find start and end of object
+        const startIndex = text.indexOf('{');
+        const endIndex = text.lastIndexOf('}');
+        if (startIndex !== -1 && endIndex !== -1) {
+             return JSON.parse(text.substring(startIndex, endIndex + 1));
+        }
+        
+        throw e;
+    }
+}
+
 export async function interpretCommand(input: { audioData?: string; mimeType?: string; text?: string }): Promise<CommandAction> {
   try {
     const parts = [];
     
     if (input.audioData && input.mimeType) {
+      // Sanitize mimeType: API often prefers 'audio/webm' or 'audio/mp3' without parameters like codecs
+      let cleanMimeType = input.mimeType;
+      if (cleanMimeType.includes(';')) {
+          cleanMimeType = cleanMimeType.split(';')[0];
+      }
+
       parts.push({
         inlineData: {
           data: input.audioData,
-          mimeType: input.mimeType
+          mimeType: cleanMimeType
         }
       });
     }
@@ -91,13 +121,15 @@ export async function interpretCommand(input: { audioData?: string; mimeType?: s
 
     const client = getAIClient();
     
-    // Switch to gemini-2.5-flash for better multimodal audio understanding compared to 'lite'
+    // Using gemini-2.5-flash for multimodal capabilities
     const response = await client.models.generateContent({
       model: 'gemini-2.5-flash', 
-      contents: {
-        role: 'user',
-        parts: parts
-      },
+      contents: [
+        {
+            role: 'user',
+            parts: parts
+        }
+      ],
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",
@@ -110,18 +142,23 @@ export async function interpretCommand(input: { audioData?: string; mimeType?: s
       throw new Error("Empty response from Neural Core");
     }
 
-    return JSON.parse(responseText) as CommandAction;
+    return cleanAndParseJSON(responseText);
+
   } catch (error: any) {
     console.error("Gemini Service Error:", error);
     
     // Extract meaningful error message
     let errorMessage = "Neural uplink failed. Signal lost.";
+    let technicalDetails = error.message || "";
+
     if (error.message.includes("API_KEY")) {
         errorMessage = "Error: System Identity Config Missing (API Key).";
     } else if (error.message.includes("404")) {
         errorMessage = "Error: AI Model Not Found (404).";
     } else if (error.message.includes("400")) {
         errorMessage = "Error: Invalid Audio Protocol (400).";
+    } else if (error.message.includes("503")) {
+        errorMessage = "Error: Neural Core Overload (503).";
     }
 
     return {

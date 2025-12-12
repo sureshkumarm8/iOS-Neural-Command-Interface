@@ -46,7 +46,15 @@ const TacticalDeck: React.FC<TacticalDeckProps> = ({ chatHistory, onChatInput, o
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         streamRef.current = stream;
 
-        const mediaRecorder = new MediaRecorder(stream);
+        // Try to request a specific mime type if supported, otherwise default
+        let options = {};
+        if (MediaRecorder.isTypeSupported('audio/webm')) {
+            options = { mimeType: 'audio/webm' };
+        } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+            options = { mimeType: 'audio/mp4' };
+        }
+
+        const mediaRecorder = new MediaRecorder(stream, options);
         mediaRecorderRef.current = mediaRecorder;
 
         mediaRecorder.ondataavailable = (e) => {
@@ -57,8 +65,9 @@ const TacticalDeck: React.FC<TacticalDeckProps> = ({ chatHistory, onChatInput, o
 
         mediaRecorder.onstop = () => {
             const totalSize = chunksRef.current.reduce((acc, chunk) => acc + chunk.size, 0);
-             if (totalSize < 100) { 
-                console.warn("Audio too short, ignoring.");
+            // Increased threshold to 1KB to ensure valid audio data
+             if (totalSize < 1000) { 
+                console.warn("Audio too short/empty, ignoring.");
                 return;
             }
 
@@ -68,6 +77,7 @@ const TacticalDeck: React.FC<TacticalDeckProps> = ({ chatHistory, onChatInput, o
             const reader = new FileReader();
             reader.readAsDataURL(blob);
             reader.onloadend = () => {
+              // Extract base64 part
               const base64String = (reader.result as string).split(',')[1];
               onVoiceInput(base64String, mimeType);
             };
