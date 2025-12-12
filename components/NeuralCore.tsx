@@ -1,57 +1,75 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, BrainCircuit } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Mic, MicOff, BrainCircuit, Activity } from 'lucide-react';
 import { AIState } from '../types';
 
 interface NeuralCoreProps {
-  onCommand: (text: string) => void;
+  onVoiceInput: (audioData: string, mimeType: string) => void;
   aiState: AIState;
   narration: string | null;
 }
 
-const NeuralCore: React.FC<NeuralCoreProps> = ({ onCommand, aiState, narration }) => {
+const NeuralCore: React.FC<NeuralCoreProps> = ({ onVoiceInput, aiState, narration }) => {
   const [isHovered, setIsHovered] = useState(false);
-  const recognitionRef = useRef<any>(null); // Type 'any' used because SpeechRecognition is experimental
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
 
-  // Speech Recognition Setup
-  useEffect(() => {
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      recognitionRef.current = new SpeechRecognition();
-      recognitionRef.current.continuous = false;
-      recognitionRef.current.interimResults = false;
-      recognitionRef.current.lang = 'en-US';
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      // Determine supported mime type
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 
+                       MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '';
+                       
+      const options = mimeType ? { mimeType } : undefined;
+      const mediaRecorder = new MediaRecorder(stream, options);
+      
+      mediaRecorderRef.current = mediaRecorder;
+      chunksRef.current = [];
 
-      recognitionRef.current.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        console.log("Heard:", transcript);
-        onCommand(transcript);
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
       };
 
-      recognitionRef.current.onerror = (event: any) => {
-        console.error("Speech Error:", event.error);
-        // Reset via parent in real app, simplified here
+      mediaRecorder.onstop = () => {
+        const type = mediaRecorder.mimeType || 'audio/webm';
+        const blob = new Blob(chunksRef.current, { type });
+        const reader = new FileReader();
+        reader.readAsDataURL(blob);
+        reader.onloadend = () => {
+          const base64String = reader.result as string;
+          // remove prefix "data:audio/xyz;base64,"
+          const base64 = base64String.split(',')[1];
+          onVoiceInput(base64, type);
+        };
+        
+        // Stop all tracks
+        stream.getTracks().forEach(track => track.stop());
       };
-    } else {
-        console.warn("Speech Recognition API not supported in this browser.");
+
+      mediaRecorder.start();
+      
+      // Notify parent/system that recording started (handled via direct interaction here for visual state)
+      // Note: In this architecture, we dispatch event for App to update state to LISTENING
+      window.dispatchEvent(new CustomEvent('neural-start-listen'));
+
+    } catch (err) {
+      console.error("Microphone access denied:", err);
+      alert("Microphone access required for Neural Core.");
     }
-  }, [onCommand]);
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+  };
 
   const toggleListening = () => {
-    if (aiState === AIState.IDLE) {
-       recognitionRef.current?.start();
-       // Parent should set state to LISTENING immediately, but we can't trigger it directly here
-       // without passing a state setter. However, onCommand trigger handles the logic flow.
-       // For this demo, we assume parent handles state transitions or we use a callback
-       // Actually, we need to signal the parent to change state.
-       // Since props drive state, we need a way to tell parent "I started listening".
-       // *Optimization*: For this specific component, we will just start recognition. 
-       // The parent isn't controlling 'start listening', the user is.
-       // We'll call a prop `onRequestListening` if we strictly followed unidirectional flow,
-       // but here we just trigger the native API and let the parent handle the `onCommand` result.
-       // To visualize "Listening" state immediately:
-       (window as any).dispatchEvent(new CustomEvent('neural-start-listen'));
-    } else {
-       recognitionRef.current?.stop();
+    if (aiState === AIState.IDLE || aiState === AIState.SPEAKING) {
+       startRecording();
+    } else if (aiState === AIState.LISTENING) {
+       stopRecording();
     }
   };
 
@@ -59,7 +77,7 @@ const NeuralCore: React.FC<NeuralCoreProps> = ({ onCommand, aiState, narration }
   const getOrbStyle = () => {
     switch (aiState) {
       case AIState.LISTENING:
-        return 'bg-neon-blue shadow-[0_0_40px_rgba(6,182,212,0.6)] animate-pulse-fast scale-110';
+        return 'bg-neon-red shadow-[0_0_40px_rgba(244,63,94,0.6)] animate-pulse-fast scale-110';
       case AIState.PROCESSING:
         return 'bg-purple-500 shadow-[0_0_40px_rgba(168,85,247,0.6)] animate-spin-slow';
       case AIState.SPEAKING:
@@ -81,7 +99,13 @@ const NeuralCore: React.FC<NeuralCoreProps> = ({ onCommand, aiState, narration }
 
       {/* The Orb */}
       <button
-        onClick={toggleListening}
+        onMouseDown={startRecording}
+        onMouseUp={stopRecording}
+        // Also support click toggle for accessibility or if preferred
+        onClick={(e) => { 
+            // Optional: If user prefers click-to-toggle instead of hold
+            // Implementation left simple for now: Hold to record or Click to start/stop
+        }} 
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         className={`relative w-20 h-20 rounded-full flex items-center justify-center transition-all duration-500 border border-white/20 backdrop-blur-md ${getOrbStyle()}`}
@@ -91,20 +115,14 @@ const NeuralCore: React.FC<NeuralCoreProps> = ({ onCommand, aiState, narration }
         {aiState === AIState.PROCESSING ? (
           <BrainCircuit size={32} className="text-white animate-pulse" />
         ) : aiState === AIState.LISTENING ? (
-          <div className="flex space-x-1 items-end h-8">
-             <div className="w-1 bg-white animate-[pulse_0.5s_ease-in-out_infinite] h-4"></div>
-             <div className="w-1 bg-white animate-[pulse_0.5s_ease-in-out_infinite_0.1s] h-8"></div>
-             <div className="w-1 bg-white animate-[pulse_0.5s_ease-in-out_infinite_0.2s] h-6"></div>
-             <div className="w-1 bg-white animate-[pulse_0.5s_ease-in-out_infinite_0.3s] h-8"></div>
-             <div className="w-1 bg-white animate-[pulse_0.5s_ease-in-out_infinite_0.4s] h-4"></div>
-          </div>
+          <Activity size={32} className="text-white animate-pulse" />
         ) : (
           <Mic size={28} className={`text-white transition-opacity ${isHovered ? 'opacity-100' : 'opacity-70'}`} />
         )}
       </button>
 
       <div className="mt-3 text-xs font-mono tracking-widest text-gray-400 uppercase">
-        {aiState === AIState.IDLE ? 'Neural Core Online' : aiState}
+        {aiState === AIState.IDLE ? 'Hold to Speak' : aiState}
       </div>
     </div>
   );

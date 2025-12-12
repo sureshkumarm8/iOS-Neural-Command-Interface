@@ -8,7 +8,7 @@ const MODEL_NAME = 'gemini-2.5-flash';
 
 const SYSTEM_INSTRUCTION = `
 You are the Neural Core of an iOS automation system. 
-Your task is to interpret user natural language commands and convert them into structured JSON actions for the backend script.
+Your task is to interpret user commands (provided as text or audio) and convert them into structured JSON actions for the backend script.
 
 The available actions are:
 1. LAUNCH_APP: Open an app. Payload: App name or bundle ID (e.g., "Safari", "com.apple.mobilesafari").
@@ -27,16 +27,31 @@ You must also provide a short, robotic but friendly "narration" string that the 
 Return ONLY the JSON object conforming to the schema.
 `;
 
-export const interpretCommand = async (text: string): Promise<CommandAction> => {
+export const interpretCommand = async (input: string | { audioData: string; mimeType: string }): Promise<CommandAction> => {
   if (!process.env.API_KEY) {
     console.warn("No API Key found");
     return { action: 'UNKNOWN', narration: "System Offline. API Key missing." };
   }
 
   try {
+    const parts = [];
+    
+    // Handle Input Type
+    if (typeof input === 'string') {
+        parts.push({ text: input });
+    } else {
+        parts.push({
+            inlineData: {
+                data: input.audioData,
+                mimeType: input.mimeType
+            }
+        });
+        parts.push({ text: "Listen to the audio command and generate the appropriate action JSON." });
+    }
+
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
-      contents: text,
+      contents: { parts },
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",

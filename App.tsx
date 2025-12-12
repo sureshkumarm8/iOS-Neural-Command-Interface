@@ -87,16 +87,18 @@ const App: React.FC = () => {
     return () => window.removeEventListener('neural-start-listen', startListenHandler);
   }, []);
 
-  // Handle Voice Command
-  const handleVoiceCommand = async (text: string) => {
+  // Handle Voice Command (Audio Data)
+  const handleVoiceInput = async (audioData: string, mimeType: string) => {
     setAiState(AIState.PROCESSING);
-    setOverlayText(text);
+    setOverlayText("Analyzing Audio Stream...");
 
     try {
-      const command: CommandAction = await interpretCommand(text);
+      // Send audio data to Gemini
+      const command: CommandAction = await interpretCommand({ audioData, mimeType });
 
       setAiState(AIState.SPEAKING);
       setAiNarration(command.narration);
+      setOverlayText(command.narration); // Show narration as subtitle
 
       if ('speechSynthesis' in window && command.narration) {
         const utterance = new SpeechSynthesisUtterance(command.narration);
@@ -158,7 +160,7 @@ const App: React.FC = () => {
             lastAction={lastAction}
           />
           <NeuralCore 
-            onCommand={handleVoiceCommand} 
+            onVoiceInput={handleVoiceInput} 
             aiState={aiState}
             narration={aiNarration}
           />
