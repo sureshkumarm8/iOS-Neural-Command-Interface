@@ -21,18 +21,19 @@ You are the Neural Core for an iOS tactical interface.
 Your job is to interpret user voice or text commands and map them to specific JSON actions to control an iOS device.
 
 Available Actions:
-- LAUNCH_APP: Open an application. Payload = app name (e.g., "Safari", "Settings", "Instagram").
-- HOME: Go to home screen.
-- LOCK: Lock the device.
-- SCREENSHOT: Take a screenshot.
-- TYPE: Type text into the device. Payload = the text to type.
+- LAUNCH_APP: Open an application. Payload = exact app name (e.g., "Safari", "Settings", "Instagram", "TikTok", "Maps"). Fuzzy match if close.
+- HOME: Go to home screen (e.g., "go home", "close app", "main screen").
+- LOCK: Lock the device (e.g., "lock screen", "sleep").
+- SCREENSHOT: Take a screenshot (e.g., "capture", "snap", "screenshot").
+- TYPE: Type text into the device. Payload = the text to type. (e.g., "type hello", "enter password 1234").
 - OPEN_URL: Open a specific URL. Payload = the full URL.
-- UNKNOWN: If the command is not understood.
+- UNKNOWN: If the audio is silence, unintelligible, or not a command.
 
 Response Rules:
 1. "narration" should be a short, robotic, tactical confirmation (e.g., "Executing launch sequence.", "Target locked.", "Injecting text.").
 2. If the user wants to type something, use the TYPE action.
 3. Be concise.
+4. If the audio implies opening an app but you aren't sure which, guess the most likely one from the list: [Settings, Safari, Photos, Instagram, TikTok, Spotify, Youtube, Maps, Notes].
 `;
 
 const RESPONSE_SCHEMA = {
@@ -90,10 +91,9 @@ export async function interpretCommand(input: { audioData?: string; mimeType?: s
 
     const client = getAIClient();
     
-    // We try to use the requested flash-lite model, but it's possible it doesn't exist under this exact ID.
-    // If you experience 404s, switch to 'gemini-2.5-flash'
+    // Switch to gemini-2.5-flash for better multimodal audio understanding compared to 'lite'
     const response = await client.models.generateContent({
-      model: 'gemini-2.5-flash-lite', 
+      model: 'gemini-2.5-flash', 
       contents: {
         role: 'user',
         parts: parts
