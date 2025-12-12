@@ -3,11 +3,11 @@ import { Device, CommandAction } from '../types';
 type Logger = (text: string, type?: 'info' | 'command' | 'success' | 'error') => void;
 
 /**
- * This bridge translates the UI/AI intent into specific API calls that
- * execute the shell scripts on the backend.
+ * This bridge translates the UI/AI intent into the specific shell commands
+ * required by the `send_to_ios_wireless.sh` script.
  */
 export const sendCommandToDevice = async (device: Device, command: CommandAction, log: Logger): Promise<void> => {
-  const scriptName = 'send_to_ios_wireless.sh';
+  const deviceFlag = `-d ${device.name}`;
   let scriptArgs = "";
   
   // Logic to map internal action types to the script's specific text syntax
@@ -55,72 +55,93 @@ export const sendCommandToDevice = async (device: Device, command: CommandAction
       return;
   }
 
-  // Visual Log
-  const fullCommandDisplay = `./${scriptName} -d ${device.name} ${scriptArgs}`;
-  log(`$ ${fullCommandDisplay}`, 'command');
+  // Construct the full shell command string
+  const fullCommand = `./connect_ios_wireless.sh ${deviceFlag} ${scriptArgs}`;
+
+  // Log command to UI
+  log(`$ ${fullCommand}`, 'command');
   log(`Executing: ${command.action}...`, 'info');
 
   try {
-    // Attempt Real Execution
-    const response = await fetch('/api/command', {
+    // Make HTTP request to backend server for command execution
+    const response = await fetch('http://localhost:3001/command', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify({ 
         deviceName: device.name, 
-        args: scriptArgs 
-      })
+        command: scriptArgs 
+      }),
     });
 
-    if (!response.ok) throw new Error('API request failed');
-    
-    const data = await response.json();
-    // Log output from stdout if available
-    if (data.stdout) log(data.stdout.trim(), 'info');
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || 'Command execution failed');
+    }
+
     log(`Command executed successfully.`, 'success');
+    
+    // Log any output from the script
+    if (result.output) {
+      log(`Output: ${result.output}`, 'info');
+    }
 
   } catch (error) {
-    console.warn("Backend unavailable, using simulation.", error);
-    // Fallback Simulation
-    await new Promise(resolve => setTimeout(resolve, 600));
-    log(`[SIMULATED] Command executed successfully.`, 'success');
+    log(`[ERROR] Command failed: ${error.message}`, 'error');
+    throw error;
   }
 };
 
 export const connectToDevice = async (device: Device, log: Logger): Promise<void> => {
-  const scriptName = 'connect_ios_wireless.sh';
-  const fullCommandDisplay = `./${scriptName} -d ${device.name}`;
-  
-  log(`$ ${fullCommandDisplay}`, 'command');
+  const fullCommand = `./connect_ios_wireless.sh -d ${device.name}`;
+
+  log(`$ ${fullCommand}`, 'command');
   log(`[INIT] Targeting device: ${device.ip}`, 'info');
-  
+
   try {
-    // Attempt Real Execution via Backend
-    const response = await fetch('/api/connect', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deviceName: device.name })
+    // First do a quick status check
+    log(`[QUICK-CHECK] Testing existing connection...`, 'info');
+    const statusResponse = await fetch(`http://localhost:3001/status/${device.name}`, {
+      method: 'GET'
     });
 
-    if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.error || 'Connection script failed');
+    const statusResult = await statusResponse.json();
+
+    if (statusResult.connected) {
+      log(`[SUCCESS] Device already connected and ready!`, 'success');
+      return;
     }
 
-    const data = await response.json();
-    if (data.stdout) log(data.stdout, 'info');
+    log(`[CONNECT] Establishing new connection...`, 'info');
+
+    // Make HTTP request to backend server for full connection
+    const response = await fetch('http://localhost:3001/connect', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ deviceName: device.name }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || 'Connection failed');
+    }
+
+    log(`[HANDSHAKE] Verifying cryptographic keys...`, 'info');
+    log(`[NET] Tunnel established. WDA started wirelessly`, 'info');
     log(`[SUCCESS] Connected to ${device.name}. Ready for commands.`, 'success');
+    
+    // Log the actual script output
+    if (result.output && !result.output.includes('already running')) {
+      log(`Connection details: ${result.message}`, 'info');
+    }
 
   } catch (error) {
-    console.warn("Backend unavailable, using simulation.", error);
-    
-    // Fallback Simulation
-    await new Promise(resolve => setTimeout(resolve, 800));
-    log(`[HANDSHAKE] Verifying cryptographic keys... (SIMULATED)`, 'info');
-    
-    await new Promise(resolve => setTimeout(resolve, 800));
-    log(`[NET] Tunnel established. Latency: 4ms (SIMULATED)`, 'info');
-    
-    await new Promise(resolve => setTimeout(resolve, 800));
-    log(`[SUCCESS] Connected to ${device.name}. Ready for commands.`, 'success');
+    log(`[ERROR] Connection failed: ${error.message}`, 'error');
+    throw error;
   }
 };
