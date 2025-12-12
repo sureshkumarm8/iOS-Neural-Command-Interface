@@ -3,9 +3,8 @@ import DeviceMatrix from './components/DeviceMatrix';
 import TheStage from './components/TheStage';
 import TacticalDeck from './components/TacticalDeck';
 import Terminal from './components/Terminal';
-import NeuralCore from './components/NeuralCore';
 import { MOCK_DEVICES } from './constants';
-import { Device, AppPreset, CommandAction, DeviceStatus, TerminalLog, AIState, ChatMessage } from './types';
+import { Device, CommandAction, DeviceStatus, TerminalLog, AIState, ChatMessage } from './types';
 import { sendCommandToDevice, connectToDevice, disconnectFromDevice } from './services/deviceBridge';
 import { interpretCommand } from './services/geminiService';
 
@@ -17,7 +16,6 @@ const App: React.FC = () => {
 
   // AI State
   const [aiState, setAiState] = useState<AIState>(AIState.IDLE);
-  const [narration, setNarration] = useState<string | null>(null);
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([
      { id: 'init', sender: 'ai', text: 'Neural Uplink established. Ready for commands.', timestamp: new Date() }
   ]);
@@ -68,7 +66,6 @@ const App: React.FC = () => {
               text: command.narration || 'Command executed.',
               timestamp: new Date()
           }]);
-          setNarration(command.narration);
       }
 
       // Speak audio (Browser TTS)
@@ -82,12 +79,10 @@ const App: React.FC = () => {
 
             utterance.onend = () => {
                  setAiState(AIState.IDLE);
-                 setNarration(null);
             };
             setTimeout(() => {
                 if (window.speechSynthesis.speaking) {
                     setAiState(AIState.IDLE);
-                    setNarration(null);
                 }
             }, 6000);
             window.speechSynthesis.speak(utterance);
@@ -103,12 +98,12 @@ const App: React.FC = () => {
   // Handle Voice Input
   const handleVoiceInput = async (audioData: string, mimeType: string) => {
     if (!selectedDevice) {
-        setNarration("Please select a device first.");
-        setAiState(AIState.SPEAKING);
-        setTimeout(() => {
-            setAiState(AIState.IDLE);
-            setNarration(null);
-        }, 3000);
+        setChatHistory(prev => [...prev, {
+            id: Date.now().toString() + 'sys',
+            sender: 'ai',
+            text: 'Please select a device first.',
+            timestamp: new Date()
+        }]);
         return;
     }
 
@@ -130,7 +125,6 @@ const App: React.FC = () => {
         console.error("AI Error:", error);
         addLog("Neural Core processing failed.", 'error');
         setAiState(AIState.IDLE);
-        setNarration(null);
     }
   };
 
@@ -233,17 +227,12 @@ const App: React.FC = () => {
         <TacticalDeck 
           chatHistory={chatHistory}
           onChatInput={handleChatInput}
+          onVoiceInput={handleVoiceInput}
+          aiState={aiState}
           onSystemAction={handleSystemAction}
           disabled={!selectedDevice || selectedDevice.status !== DeviceStatus.ONLINE}
         />
       </div>
-
-      {/* Neural Core Overlay */}
-      <NeuralCore 
-        onVoiceInput={handleVoiceInput} 
-        aiState={aiState} 
-        narration={narration} 
-      />
     </div>
   );
 };
