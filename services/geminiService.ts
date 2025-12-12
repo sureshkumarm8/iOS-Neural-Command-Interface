@@ -6,7 +6,12 @@ let ai: GoogleGenAI | null = null;
 
 const getAIClient = () => {
   if (!ai) {
-    ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    // Check if API key is present
+    const apiKey = process.env.API_KEY;
+    if (!apiKey || apiKey === 'undefined') {
+        throw new Error("Missing API_KEY in environment");
+    }
+    ai = new GoogleGenAI({ apiKey });
   }
   return ai;
 };
@@ -85,8 +90,10 @@ export async function interpretCommand(input: { audioData?: string; mimeType?: s
 
     const client = getAIClient();
     
+    // We try to use the requested flash-lite model, but it's possible it doesn't exist under this exact ID.
+    // If you experience 404s, switch to 'gemini-2.5-flash'
     const response = await client.models.generateContent({
-      model: 'gemini-2.5-flash-lite',
+      model: 'gemini-2.5-flash-lite', 
       contents: {
         role: 'user',
         parts: parts
@@ -104,11 +111,22 @@ export async function interpretCommand(input: { audioData?: string; mimeType?: s
     }
 
     return JSON.parse(responseText) as CommandAction;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini Service Error:", error);
+    
+    // Extract meaningful error message
+    let errorMessage = "Neural uplink failed. Signal lost.";
+    if (error.message.includes("API_KEY")) {
+        errorMessage = "Error: System Identity Config Missing (API Key).";
+    } else if (error.message.includes("404")) {
+        errorMessage = "Error: AI Model Not Found (404).";
+    } else if (error.message.includes("400")) {
+        errorMessage = "Error: Invalid Audio Protocol (400).";
+    }
+
     return {
       action: 'UNKNOWN',
-      narration: "Neural uplink failed. Signal lost."
+      narration: errorMessage
     };
   }
 }

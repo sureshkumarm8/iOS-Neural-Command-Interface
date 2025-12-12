@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Mic, Activity, Loader2, Volume2 } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Mic, Loader2, Volume2 } from 'lucide-react';
 import { AIState } from '../types';
 
 interface NeuralCoreProps {
@@ -12,13 +12,26 @@ const NeuralCore: React.FC<NeuralCoreProps> = ({ onVoiceInput, aiState, narratio
   const [isHovered, setIsHovered] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
+  const isRecordingRef = useRef<boolean>(false);
 
   const startListening = async () => {
+    if (aiState !== AIState.IDLE) return;
+    isRecordingRef.current = true;
+    chunksRef.current = [];
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      
+      // Check if user released button while we were getting permission
+      if (!isRecordingRef.current) {
+         stream.getTracks().forEach(track => track.stop());
+         return;
+      }
+
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
-      chunksRef.current = [];
 
       mediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) {
@@ -27,58 +40,54 @@ const NeuralCore: React.FC<NeuralCoreProps> = ({ onVoiceInput, aiState, narratio
       };
 
       mediaRecorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' }); // Chrome uses webm by default usually
+        const totalSize = chunksRef.current.reduce((acc, chunk) => acc + chunk.size, 0);
+        
+        // If audio is too short or empty, ignore
+        if (totalSize < 1000) { 
+            console.warn("Audio too short, ignoring.");
+            return;
+        }
+
+        const mimeType = mediaRecorder.mimeType || 'audio/webm';
+        const blob = new Blob(chunksRef.current, { type: mimeType });
+        
         const reader = new FileReader();
         reader.readAsDataURL(blob);
         reader.onloadend = () => {
           const base64String = (reader.result as string).split(',')[1];
-          // Determine mime type from blob or default to something generic if needed, 
-          // but MediaRecorder usually gives specific types.
-          // For simplicity in this demo, passing the blob type or hardcoded compatible type.
-          onVoiceInput(base64String, blob.type || 'audio/webm');
+          onVoiceInput(base64String, mimeType);
         };
         
-        // Stop all tracks
-        stream.getTracks().forEach(track => track.stop());
+        // Cleanup tracks
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach(track => track.stop());
+            streamRef.current = null;
+        }
       };
 
       mediaRecorder.start();
     } catch (err) {
       console.error("Microphone access denied:", err);
+      isRecordingRef.current = false;
     }
   };
 
   const stopListening = () => {
+    isRecordingRef.current = false;
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.stop();
-    }
-  };
-
-  // Handle click to toggle listening
-  const handleInteraction = () => {
-    if (aiState === AIState.IDLE) {
-      // Parent should handle state transition, but we can assume we start here
-      startListening();
-      // We'll let the parent know we are listening via a state update if we had a callback for that,
-      // but here we just trigger the recording. 
-      // Ideally, the parent sets state to LISTENING, but for this component, 
-      // we need to tell the parent "I started". 
-      // Since props drive state, we are slightly optimistic here or need a callback "onStartListening".
-      // For this simplified version, we rely on the user interface feedback.
-      // Wait, the parent controls AIState. We need to pass "onStartListening" prop ideally,
-      // but to keep it simple with existing props:
-      // We will assume immediate state change is not required for the logic, 
-      // but the UI update depends on `aiState`.
-      // Let's implement a "local" recording state if needed, but the prompt implies App.tsx handles logic.
-      // We will call a prop if we had one. 
-      // Since we don't, we'll just implement the start/stop logic and the `onVoiceInput` will trigger the processing state.
-    } else if (aiState === AIState.LISTENING) {
-       stopListening();
+    } else {
+        // If we haven't started recording yet (still initializing), 
+        // the isRecordingRef check in startListening will handle cleanup.
+        if (streamRef.current) {
+             streamRef.current.getTracks().forEach(track => track.stop());
+             streamRef.current = null;
+        }
     }
   };
 
   // Determine Visual State
-  const isListening = aiState === AIState.LISTENING || (mediaRecorderRef.current?.state === 'recording');
+  const isListening = aiState === AIState.LISTENING || (isRecordingRef.current);
 
   return (
     <div 
@@ -97,7 +106,7 @@ const NeuralCore: React.FC<NeuralCoreProps> = ({ onVoiceInput, aiState, narratio
       <button
         onMouseDown={startListening}
         onMouseUp={stopListening}
-        // Also support touch for mobile
+        onMouseLeave={stopListening} // Stop if mouse leaves button
         onTouchStart={startListening}
         onTouchEnd={stopListening}
         className={`relative group w-20 h-20 rounded-full flex items-center justify-center transition-all duration-500 ${
