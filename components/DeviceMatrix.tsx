@@ -1,5 +1,5 @@
 import React from 'react';
-import { Smartphone, Tablet, Wifi, WifiOff, Battery, Link, Loader2 } from 'lucide-react';
+import { Smartphone, Tablet, Wifi, WifiOff, Battery, Link, Loader2, LogOut } from 'lucide-react';
 import { Device, DeviceStatus } from '../types';
 
 interface DeviceMatrixProps {
@@ -7,9 +7,10 @@ interface DeviceMatrixProps {
   selectedDeviceId: string | null;
   onSelectDevice: (id: string) => void;
   onConnectDevice: (device: Device) => void;
+  onDisconnectDevice: (device: Device) => void;
 }
 
-const DeviceMatrix: React.FC<DeviceMatrixProps> = ({ devices, selectedDeviceId, onSelectDevice, onConnectDevice }) => {
+const DeviceMatrix: React.FC<DeviceMatrixProps> = ({ devices, selectedDeviceId, onSelectDevice, onConnectDevice, onDisconnectDevice }) => {
   return (
     <div className="flex flex-col h-full bg-glass-100 backdrop-blur-xl border-r border-white/10 p-4">
       <div className="mb-6 flex items-center space-x-2">
@@ -70,22 +71,35 @@ const DeviceMatrix: React.FC<DeviceMatrixProps> = ({ devices, selectedDeviceId, 
                 </div>
               </div>
 
-              {/* Connect Button */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onConnectDevice(device);
-                }}
-                disabled={isBusy}
-                className={`relative z-20 p-2 rounded-lg transition-all ml-2 border border-transparent ${
-                  isBusy 
-                    ? 'bg-white/5 text-yellow-400' 
-                    : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 hover:border-white/10'
-                }`}
-                title="Connect / Refresh Link"
-              >
-                {isBusy ? <Loader2 size={16} className="animate-spin" /> : <Link size={16} />}
-              </button>
+              {/* Connect / Disconnect Button */}
+              {isOnline ? (
+                 <button
+                   onClick={(e) => {
+                     e.stopPropagation();
+                     onDisconnectDevice(device);
+                   }}
+                   className="relative z-20 p-2 rounded-lg transition-all ml-2 border border-transparent bg-white/5 text-neon-red hover:bg-neon-red/10 hover:border-neon-red/20"
+                   title="Disconnect / Close Session"
+                 >
+                   <LogOut size={16} />
+                 </button>
+              ) : (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onConnectDevice(device);
+                  }}
+                  disabled={isBusy}
+                  className={`relative z-20 p-2 rounded-lg transition-all ml-2 border border-transparent ${
+                    isBusy 
+                      ? 'bg-white/5 text-yellow-400' 
+                      : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 hover:border-white/10'
+                  }`}
+                  title="Connect / Refresh Link"
+                >
+                  {isBusy ? <Loader2 size={16} className="animate-spin" /> : <Link size={16} />}
+                </button>
+              )}
             </div>
           );
         })}

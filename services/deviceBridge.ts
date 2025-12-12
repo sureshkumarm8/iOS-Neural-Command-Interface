@@ -145,3 +145,27 @@ export const connectToDevice = async (device: Device, log: Logger): Promise<void
     throw error;
   }
 };
+
+export const disconnectFromDevice = async (device: Device, log: Logger): Promise<void> => {
+  log(`[DISCONNECT] Terminating session for ${device.name}...`, 'info');
+  try {
+      const response = await fetch('http://localhost:3001/disconnect', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ deviceName: device.name }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+         throw new Error(result.error || 'Disconnect failed');
+      }
+
+      log(`[DISCONNECTED] Session closed successfully.`, 'success');
+  } catch (error) {
+      log(`[ERROR] Disconnect failed: ${error.message}`, 'error');
+      throw error;
+  }
+};

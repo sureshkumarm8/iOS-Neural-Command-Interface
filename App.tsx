@@ -5,7 +5,7 @@ import TacticalDeck from './components/TacticalDeck';
 import Terminal from './components/Terminal';
 import { MOCK_DEVICES } from './constants';
 import { Device, AppPreset, CommandAction, DeviceStatus, TerminalLog } from './types';
-import { sendCommandToDevice, connectToDevice } from './services/deviceBridge';
+import { sendCommandToDevice, connectToDevice, disconnectFromDevice } from './services/deviceBridge';
 
 const App: React.FC = () => {
   const [devices, setDevices] = useState<Device[]>(MOCK_DEVICES);
@@ -68,6 +68,18 @@ const App: React.FC = () => {
     }
   };
 
+  // Disconnect Handler
+  const handleDisconnectDevice = async (device: Device) => {
+    addLog(`Terminating uplink for ${device.name}...`, 'info');
+    try {
+        await disconnectFromDevice(device, addLog);
+        setDevices(prev => prev.map(d => d.id === device.id ? { ...d, status: DeviceStatus.OFFLINE } : d));
+    } catch (e) {
+        addLog(`Force disconnect triggered for ${device.name}`, 'error');
+        setDevices(prev => prev.map(d => d.id === device.id ? { ...d, status: DeviceStatus.OFFLINE } : d));
+    }
+  };
+
   // Direct actions
   const handleLaunchApp = (app: AppPreset) => {
     executeAction('LAUNCH_APP', app.name);
@@ -94,6 +106,7 @@ const App: React.FC = () => {
           selectedDeviceId={selectedDeviceId} 
           onSelectDevice={setSelectedDeviceId} 
           onConnectDevice={handleConnectDevice}
+          onDisconnectDevice={handleDisconnectDevice}
         />
       </div>
 

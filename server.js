@@ -188,6 +188,30 @@ app.post('/connect', (req, res) => {
     }
 });
 
+// Endpoint to disconnect/terminate session
+app.post('/disconnect', (req, res) => {
+    const { deviceName } = req.body;
+    if (!deviceName) {
+        return res.status(400).json({ error: 'Device name is required' });
+    }
+    
+    console.log(`[Server] Requesting disconnect for ${deviceName}`);
+    
+    // Kill the process matching the connection script for this device
+    // We use pkill -f to match the full command line arguments
+    const cmd = `pkill -f "connect_ios_wireless.sh -d ${deviceName}"`;
+    
+    exec(cmd, (err, stdout, stderr) => {
+         // Even if pkill fails (process not found), we consider it disconnected/cleaned up
+         if (err) {
+             console.log(`[Server] Disconnect notice: ${err.message} (Process might already be dead)`);
+         } else {
+             console.log(`[Server] Disconnect command executed: ${cmd}`);
+         }
+         res.json({ success: true, message: 'Session closed successfully' });
+    });
+});
+
 // Endpoint to handle command execution (optimized)
 app.post('/command', (req, res) => {
     const { deviceName, command } = req.body;
