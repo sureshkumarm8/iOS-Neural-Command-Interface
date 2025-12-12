@@ -4,6 +4,13 @@ export enum DeviceStatus {
   BUSY = 'BUSY'
 }
 
+export enum AIState {
+  IDLE = 'IDLE',
+  LISTENING = 'LISTENING',
+  PROCESSING = 'PROCESSING',
+  SPEAKING = 'SPEAKING'
+}
+
 export interface Device {
   id: string;
   name: string;
@@ -25,6 +32,7 @@ export interface AppPreset {
 export interface CommandAction {
   action: 'LAUNCH_APP' | 'KILL_APP' | 'HOME' | 'LOCK' | 'SCREENSHOT' | 'TYPE' | 'OPEN_URL' | 'RESTART' | 'UNINSTALL' | 'UNKNOWN';
   payload?: string; // bundleId, text, or url
+  narration?: string; // What the AI says back
 }
 
 export interface TerminalLog {

@@ -3,15 +3,21 @@ import DeviceMatrix from './components/DeviceMatrix';
 import TheStage from './components/TheStage';
 import TacticalDeck from './components/TacticalDeck';
 import Terminal from './components/Terminal';
+import NeuralCore from './components/NeuralCore';
 import { MOCK_DEVICES } from './constants';
-import { Device, AppPreset, CommandAction, DeviceStatus, TerminalLog } from './types';
+import { Device, AppPreset, CommandAction, DeviceStatus, TerminalLog, AIState } from './types';
 import { sendCommandToDevice, connectToDevice, disconnectFromDevice } from './services/deviceBridge';
+import { interpretCommand } from './services/geminiService';
 
 const App: React.FC = () => {
   const [devices, setDevices] = useState<Device[]>(MOCK_DEVICES);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [lastAction, setLastAction] = useState<string | null>(null);
   const [logs, setLogs] = useState<TerminalLog[]>([]);
+
+  // AI State
+  const [aiState, setAiState] = useState<AIState>(AIState.IDLE);
+  const [narration, setNarration] = useState<string | null>(null);
 
   const selectedDevice = devices.find(d => d.id === selectedDeviceId);
 
@@ -48,6 +54,73 @@ const App: React.FC = () => {
         // setLastAction(null); 
     }, 2000);
   }, [selectedDevice, addLog]);
+
+  // Handle Voice Input
+  const handleVoiceInput = async (audioData: string, mimeType: string) => {
+    if (!selectedDevice) {
+        setNarration("Please select a device first.");
+        setAiState(AIState.SPEAKING);
+        setTimeout(() => {
+            setAiState(AIState.IDLE);
+            setNarration(null);
+        }, 3000);
+        return;
+    }
+    
+    setAiState(AIState.PROCESSING);
+    addLog("Processing voice command...", 'info');
+
+    try {
+        // Use Gemini Flash Lite for fast response
+        const command = await interpretCommand({ audioData, mimeType });
+        
+        if (command.narration) {
+            setNarration(command.narration);
+            setAiState(AIState.SPEAKING);
+            addLog(`AI: ${command.narration}`, 'success');
+            
+            // Speak audio (Browser TTS)
+            const utterance = new SpeechSynthesisUtterance(command.narration);
+            // Optional: Choose a more robotic voice if available
+            const voices = window.speechSynthesis.getVoices();
+            const preferredVoice = voices.find(v => v.name.includes('Google US English') || v.name.includes('Samantha'));
+            if (preferredVoice) utterance.voice = preferredVoice;
+            
+            utterance.rate = 1.1; // Slightly faster for "tactical" feel
+
+            utterance.onend = () => {
+                 setAiState(AIState.IDLE);
+                 setNarration(null);
+            };
+            // Safety timeout in case onend doesn't fire
+            setTimeout(() => {
+                if (window.speechSynthesis.speaking) {
+                    // Don't cancel, just reset UI
+                    setAiState(AIState.IDLE);
+                    setNarration(null);
+                }
+            }, 6000);
+            
+            window.speechSynthesis.speak(utterance);
+        } else {
+             setAiState(AIState.IDLE);
+        }
+
+        if (command.action !== 'UNKNOWN') {
+            await executeAction(command.action, command.payload);
+        }
+
+    } catch (error) {
+        console.error("AI Error:", error);
+        addLog("Neural Core processing failed.", 'error');
+        setAiState(AIState.IDLE);
+        setNarration(null);
+    }
+  };
+
+  // Allow text injection to also be smart if we wanted, 
+  // currently TacticalDeck sends 'TYPE' directly.
+  // We can add a "Smart Text" feature later.
 
   // Connection Handler
   const handleConnectDevice = async (device: Device) => {
@@ -134,6 +207,13 @@ const App: React.FC = () => {
           disabled={!selectedDevice || selectedDevice.status !== DeviceStatus.ONLINE}
         />
       </div>
+
+      {/* Neural Core Overlay */}
+      <NeuralCore 
+        onVoiceInput={handleVoiceInput} 
+        aiState={aiState} 
+        narration={narration} 
+      />
     </div>
   );
 };

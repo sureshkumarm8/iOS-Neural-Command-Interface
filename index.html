@@ -27,6 +27,10 @@
                 red: '#f43f5e',
                 blue: '#06b6d4',
               }
+            },
+            animation: {
+              'pulse-fast': 'pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+              'spin-slow': 'spin 3s linear infinite',
             }
           },
         },
@@ -57,21 +61,22 @@
         background: rgba(255,255,255,0.2); 
       }
     </style>
-  <script type="importmap">
+<script type="importmap">
 {
   "imports": {
+    "react/": "https://esm.sh/react@^19.2.3/",
     "react": "https://esm.sh/react@^19.2.3",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "react/": "https://esm.sh/react@^19.2.3/",
     "lucide-react": "https://esm.sh/lucide-react@^0.561.0",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
-    "vite": "https://esm.sh/vite@^7.2.7",
     "path": "https://esm.sh/path@^0.12.7",
-    "cors": "https://esm.sh/cors@^2.8.5",
+    "@google/genai": "https://esm.sh/@google/genai@^1.33.0",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
     "express": "https://esm.sh/express@^5.2.1",
+    "vite": "https://esm.sh/vite@^7.2.7",
+    "fs": "https://esm.sh/fs@^0.0.1-security",
     "child_process": "https://esm.sh/child_process@^1.0.2",
-    "url": "https://esm.sh/url@^0.11.4",
-    "fs": "https://esm.sh/fs@^0.0.1-security"
+    "cors": "https://esm.sh/cors@^2.8.5",
+    "url": "https://esm.sh/url@^0.11.4"
   }
 }
 </script>

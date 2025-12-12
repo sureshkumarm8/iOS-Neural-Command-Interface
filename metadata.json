@@ -1,5 +1,7 @@
 {
   "name": "iOS Neural Command Interface",
   "description": "A glassmorphism-styled tactical dashboard for iOS device automation and control.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "microphone"
+  ]
 }
